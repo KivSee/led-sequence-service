@@ -2,6 +2,7 @@ from aiohttp import web
 import aiohttp
 import os
 import json
+import logging
 
 # TODO: how to properly resolve proto import?
 import sys
@@ -56,12 +57,13 @@ async def set_sequence(request):
         try:
             curr_conf = await storage_backend.read(trigger_name)
         except:
-            pass
+            logging.info("could not find existing sequence for trigger '%s', creating a new one", trigger_name)
         curr_conf['things'][thing_name] = new_config
         del curr_conf['guid']
         guid = hash(json.dumps(curr_conf)) & 0xffffffff
         curr_conf['guid'] = guid
         await storage_backend.upsert(trigger_name, curr_conf)
+        logging.info("saved new sequence for trigger '%s' on thing '%s' with guid '%d'", trigger_name, thing_name, guid)
 
         headers = {
             'etag': str(guid)
@@ -78,4 +80,6 @@ app.add_routes([
 
 if __name__ == '__main__':
     server_port = os.environ.get('SERVER_PORT', 8082)
+    LOGLEVEL = os.environ.get('LOGLEVEL', 'INFO').upper()
+    logging.basicConfig(level=LOGLEVEL)
     web.run_app(app, port=server_port)
