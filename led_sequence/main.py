@@ -47,37 +47,43 @@ async def get_sequence(request: aiohttp.RequestInfo):
     return web.Response(status=400)
 
 async def set_sequence(request):
+
     trigger_name = request.match_info.get('trigger_name')
     thing_name = request.match_info.get('thing_name')
 
+    curr_conf = {
+        "things": {},
+        "guid": ""
+    }
     new_config = await request.json()
+
+    try:
+        curr_conf = await storage_backend.read(trigger_name)
+    except:
+        logging.info("could not find existing sequence for trigger '%s', creating a new one", trigger_name)
+
     if thing_name:
-        curr_conf = {
-            "things": {},
-            "guid": ""
-        }
-        try:
-            curr_conf = await storage_backend.read(trigger_name)
-        except:
-            logging.info("could not find existing sequence for trigger '%s', creating a new one", trigger_name)
         curr_conf['things'][thing_name] = new_config
-        del curr_conf['guid']
-        guid = hash(json.dumps(curr_conf)) & 0xffffffff
-        curr_conf['guid'] = guid
-        await storage_backend.upsert(trigger_name, curr_conf)
-        logging.info("saved new sequence for trigger '%s' on thing '%s' with guid '%d'", trigger_name, thing_name, guid)
+    else:
+        curr_conf['things'] = new_config
 
-        headers = {
-            'etag': str(guid)
-        }
+    del curr_conf['guid']
+    guid = hash(json.dumps(curr_conf)) & 0xffffffff
+    curr_conf['guid'] = guid
+    await storage_backend.upsert(trigger_name, curr_conf)
+    logging.info("saved new sequence for trigger '%s' on thing '%s' with guid '%d'", trigger_name, thing_name, guid)
 
-        return web.Response(status=200, headers=headers)
+    headers = {
+        'etag': str(guid)
+    }
+    return web.Response(status=200, headers=headers)
 
 app = web.Application()
 app.add_routes([
     web.get('/triggers/{trigger_name}/objects/{thing_name}', get_sequence),
     web.get('/triggers/{trigger_name}/objects/{thing_name}/guid/{guid}', get_sequence),
     web.put('/triggers/{trigger_name}/objects/{thing_name}', set_sequence),
+    web.put('/triggers/{trigger_name}', set_sequence),
     ])
 
 if __name__ == '__main__':

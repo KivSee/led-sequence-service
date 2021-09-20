@@ -46,6 +46,50 @@ SERVER_PORT=8082
 }
 ```
 
+- PUT `/triggers/{trigger_name}` - Same as above, but update all the thing-objects at once. the payload is a json object, where keys are thing names, and values are json equivalent of AnimationProto like above endpoint. Example:
+```json
+{
+	"foo": {
+	    "effects": [{
+	    	"effect_config": {
+	    		"start_time": 0,
+	    		"end_time": 200,
+	    		"segments": "all"
+	    	},
+	    	"const_color": {
+	    		"color": {
+	    			"hue": 1.0,
+	    			"sat": 1.0,
+	    			"val": 0.3
+	    		}
+	    	}
+	    }
+	    ],
+	    "duration_ms": 1000,
+	    "num_repeats": 0
+    },
+    "bar": {
+	    "effects": [{
+	    	"effect_config": {
+	    		"start_time": 600,
+	    		"end_time": 800,
+	    		"segments": "all"
+	    	},
+	    	"const_color": {
+	    		"color": {
+	    			"hue": 0.2,
+	    			"sat": 0.7,
+	    			"val": 1.0
+	    		}
+	    	}
+	    }
+	    ],
+	    "duration_ms": 1000,
+	    "num_repeats": 0        
+    }
+}
+```
+
 - GET `/triggers/{trigger_name}/objects/{thing_name}` - get sequence for `trigger_name` on object with `thing_name`. You can set `Content-Type` to either `application/json` or `application/x-protobuf`. 
 
 - GET `/triggers/{trigger_name}/objects/{thing_name}/guid/{guid}` - Same as above, but return sequence with a specific `guid` and return 404 if guid is not found.
