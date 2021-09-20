@@ -19,6 +19,8 @@ async def get_sequence(request: aiohttp.RequestInfo):
     thing_name = request.match_info.get('thing_name')
     guid = request.match_info.get('guid')
     trigger_seq_config = await storage_backend.read(trigger_name)
+    if not trigger_seq_config:
+        return web.Response(status=404)
 
     current_guid = str(trigger_seq_config['guid'])
     if guid and guid != current_guid:

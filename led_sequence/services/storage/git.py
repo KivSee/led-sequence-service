@@ -17,8 +17,11 @@ class GitStorage(StorageInterface):
 
     async def read(self, trigger_name: str):
         file_name = self.trigger_name_to_file_name(trigger_name)
-        async with aiof.open(file_name, "r") as out:
-            return json.loads(await out.read())
+        try:
+            async with aiof.open(file_name, "r") as out:
+                return json.loads(await out.read())
+        except FileNotFoundError:
+            return None
 
     async def get_all_triggers(self) -> List[str]:
         return []
