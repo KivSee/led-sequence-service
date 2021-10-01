@@ -3,6 +3,7 @@ import aiohttp
 import os
 import json
 import logging
+import asyncio
 
 # TODO: how to properly resolve proto import?
 import sys
@@ -51,16 +52,12 @@ async def set_sequence(request):
     trigger_name = request.match_info.get('trigger_name')
     thing_name = request.match_info.get('thing_name')
 
-    curr_conf = {
-        "things": {},
-        "guid": ""
-    }
-    new_config = await request.json()
-
-    try:
-        curr_conf = await storage_backend.read(trigger_name)
-    except:
-        logging.info("could not find existing sequence for trigger '%s', creating a new one", trigger_name)
+    [new_config, curr_conf] = await asyncio.gather(request.json(), storage_backend.read(trigger_name))
+    if not curr_conf:
+        curr_conf = {
+            "things": {},
+            "guid": ""
+        }
 
     if thing_name:
         curr_conf['things'][thing_name] = new_config
