@@ -4,7 +4,7 @@ This service is part of the Kivsee led show and home lightning eco-system.
 
 ## Usage
 Install dependencies: `pipenv install`.
-Run the service: `pipenv run led_sequence/main.py`
+Run the service: `pipenv run python led_sequence/main.py`
 
 ### Development
 For developemnt, you can use `nodemon` to automatically restart the execution when code files are saved.
