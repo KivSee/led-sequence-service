@@ -15,6 +15,14 @@ from services.storage import create_storage_backend
 
 storage_backend = create_storage_backend()
 
+async def get_guid(request: aiohttp.RequestInfo):
+    trigger_name = request.match_info.get('trigger_name')
+    trigger_seq_config = await storage_backend.read(trigger_name)
+    if not trigger_seq_config:
+        return web.Response(status=404)
+    current_guid = str(trigger_seq_config['guid'])
+    return web.json_response({"guid": current_guid})
+
 async def get_sequence(request: aiohttp.RequestInfo):
     trigger_name = request.match_info.get('trigger_name')
     thing_name = request.match_info.get('thing_name')
@@ -77,6 +85,7 @@ async def set_sequence(request):
 
 app = web.Application()
 app.add_routes([
+    web.get('/triggers/{trigger_name}/guid', get_guid),
     web.get('/triggers/{trigger_name}/objects/{thing_name}', get_sequence),
     web.get('/triggers/{trigger_name}/objects/{thing_name}/guid/{guid}', get_sequence),
     web.put('/triggers/{trigger_name}/objects/{thing_name}', set_sequence),
