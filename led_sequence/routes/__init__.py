@@ -22,6 +22,16 @@ async def get_guid(request: aiohttp.RequestInfo):
     current_guid = str(trigger_seq_config['guid'])
     return aiohttp.web.json_response({"guid": current_guid})
 
+async def get_all_triggers(request: aiohttp.RequestInfo):
+    trigger_name = request.match_info.get('trigger_name')
+    trigger_seq_config = await storage_backend.read(trigger_name)
+    if not trigger_seq_config:
+        return aiohttp.web.Response(status=404)
+    headers = {
+        'etag': str(trigger_seq_config['guid'])
+    }
+    return aiohttp.web.json_response(trigger_seq_config["things"], headers = headers)
+
 async def get_sequence(request: aiohttp.RequestInfo):
     trigger_name = request.match_info.get('trigger_name')
     thing_name = request.match_info.get('thing_name')
@@ -90,6 +100,7 @@ async def set_sequence(request):
 
 def setup_routes(app):
     app.router.add_get('/triggers/{trigger_name}/guid', get_guid),
+    app.router.add_get('/triggers/{trigger_name}', get_all_triggers),
     app.router.add_get('/triggers/{trigger_name}/objects/{thing_name}', get_sequence),
     app.router.add_get('/triggers/{trigger_name}/objects/{thing_name}/guid/{guid}', get_sequence),
     app.router.add_put('/triggers/{trigger_name}/objects/{thing_name}', set_sequence),

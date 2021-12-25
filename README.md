@@ -90,6 +90,8 @@ SERVER_PORT=8082
 }
 ```
 
+- GET `/triggers/{trigger_name}` - get all the sequences of a specific trigger for all objects. repose is a json map where key is object name and value is the sequence for that object. guid is returned on etag header.
+
 - GET `/triggers/{trigger_name}/objects/{thing_name}` - get sequence for `trigger_name` on object with `thing_name`. You can set `Content-Type` to either `application/json` or `application/x-protobuf`. 
 
 - GET `/triggers/{trigger_name}/objects/{thing_name}/guid/{guid}` - Same as above, but return sequence with a specific `guid` and return 404 if guid is not found.
