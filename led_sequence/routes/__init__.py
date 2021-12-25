@@ -66,6 +66,11 @@ async def set_sequence(request):
             "guid": ""
         }
 
+    try:
+        ParseDict(new_config, AnimationProto())
+    except Exception as err:
+        return aiohttp.web.Response(status=400, text = str(err))
+
     if thing_name:
         curr_conf['things'][thing_name] = new_config
     else:
