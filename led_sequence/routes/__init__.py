@@ -66,15 +66,16 @@ async def set_sequence(request):
             "guid": ""
         }
 
-    try:
-        ParseDict(new_config, AnimationProto())
+    try: 
+        if thing_name:
+            curr_conf['things'][thing_name] = new_config
+            ParseDict(new_config, AnimationProto())
+        else:
+            curr_conf['things'] = new_config
+            for single_thing_config in new_config.values():
+                ParseDict(single_thing_config, AnimationProto())
     except Exception as err:
         return aiohttp.web.Response(status=400, text = str(err))
-
-    if thing_name:
-        curr_conf['things'][thing_name] = new_config
-    else:
-        curr_conf['things'] = new_config
 
     del curr_conf['guid']
     guid = hash(json.dumps(curr_conf)) & 0xffffffff
