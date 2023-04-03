@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import asyncio
+from services.audacity import config_to_audacity_labels_beats
+from services.audacity import config_to_audacity_labels_episodes
 from services.storage import create_storage_backend
 
 # TODO: how to properly resolve proto import?
@@ -26,6 +28,22 @@ async def get_trigger_config(request: aiohttp.RequestInfo):
     if not trigger_config:
         return aiohttp.web.Response(status=404)
     return aiohttp.web.json_response(trigger_config)
+
+async def get_audacity_episodes(request: aiohttp.RequestInfo):
+    trigger_name = request.match_info.get('trigger_name')
+    trigger_config = await storage_backend.read_config(trigger_name)
+    if not trigger_config:
+        return aiohttp.web.Response(status=404)
+    audacity_labels = config_to_audacity_labels_episodes(trigger_config)
+    return aiohttp.web.Response(text=audacity_labels)
+
+async def get_audacity_beats(request: aiohttp.RequestInfo):
+    trigger_name = request.match_info.get('trigger_name')
+    trigger_config = await storage_backend.read_config(trigger_name)
+    if not trigger_config:
+        return aiohttp.web.Response(status=404)
+    audacity_labels = config_to_audacity_labels_beats(trigger_config)
+    return aiohttp.web.Response(text=audacity_labels)
 
 async def get_guid(request: aiohttp.RequestInfo):
     trigger_name = request.match_info.get('trigger_name')
@@ -114,6 +132,8 @@ async def set_sequence(request):
 def setup_routes(app):
     app.router.add_put('/triggers/{trigger_name}/config', put_trigger_config),
     app.router.add_get('/triggers/{trigger_name}/config', get_trigger_config),
+    app.router.add_get('/triggers/{trigger_name}/config/audacity/episodes', get_audacity_episodes),
+    app.router.add_get('/triggers/{trigger_name}/config/audacity/beats', get_audacity_beats),
     app.router.add_get('/triggers/{trigger_name}/guid', get_guid),
     app.router.add_get('/triggers/{trigger_name}', get_all_triggers),
     app.router.add_get('/triggers/{trigger_name}/objects/{thing_name}', get_sequence),

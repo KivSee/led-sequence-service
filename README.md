@@ -22,7 +22,44 @@ To set the port for the http server, use environment variable:
 SERVER_PORT=8082
 ```
 
-### Endpoints:
+### Config
+The config endpoint allows to get and put high level configuration parameters for a trigger.
+This configuration can be used to create audacity labels and effects
+
+- PUT `/triggers/{trigger_name}/config` - upsert config for a trigger. Payload should be `application/json` with following structure:
+```json
+{
+    "bpmSections": [
+        {
+            "startSeconds": 0.09,
+            "bpm": 67,
+            "beatsPerEpisode": 32,
+            "numEpisodes": 4
+        },
+        {
+            "startSeconds": 114.830,
+            "bpm": 78,
+            "beatsPerEpisode": 16,
+            "numEpisodes": 15
+
+        }
+    ],
+    "lengthSeconds": 295
+}
+```
+
+- GET `/triggers/{trigger_name}/config` - return the latest config for the trigger, as givin in PUT.
+
+### Audacity Lables
+
+The following endpoints return audacity compaitble text which can be saved to a file and loaded into audacity as import->labels. These give visual marks to aid synchronization.
+
+- GET `/triggers/{trigger_name}/config/audacity/episodes` - this indicates the position of episodes in the track
+
+- GET `/triggers/{trigger_name}/config/audacity/beats` - this indicates the position of beats in the track
+
+
+### Sequence:
 - PUT `/triggers/{trigger_name}/objects/{thing_name}` - upsert sequence for a trigger on an object. Payload should be `application/json` matching to AnimationProto message. Example payload:
 ```json
 {
