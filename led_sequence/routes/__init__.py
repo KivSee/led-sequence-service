@@ -14,6 +14,19 @@ from google.protobuf.json_format import ParseDict
 
 storage_backend = create_storage_backend()
 
+async def put_trigger_config(request: aiohttp.RequestInfo):
+    trigger_name = request.match_info.get('trigger_name')
+    config = await request.json()
+    await storage_backend.upsert_config(trigger_name, config)
+    return aiohttp.web.Response(status=200)
+
+async def get_trigger_config(request: aiohttp.RequestInfo):
+    trigger_name = request.match_info.get('trigger_name')
+    trigger_config = await storage_backend.read_config(trigger_name)
+    if not trigger_config:
+        return aiohttp.web.Response(status=404)
+    return aiohttp.web.json_response(trigger_config)
+
 async def get_guid(request: aiohttp.RequestInfo):
     trigger_name = request.match_info.get('trigger_name')
     trigger_seq_config = await storage_backend.read_sequence(trigger_name)
@@ -99,6 +112,8 @@ async def set_sequence(request):
     return aiohttp.web.Response(status=200, headers=headers)
 
 def setup_routes(app):
+    app.router.add_put('/triggers/{trigger_name}/config', put_trigger_config),
+    app.router.add_get('/triggers/{trigger_name}/config', get_trigger_config),
     app.router.add_get('/triggers/{trigger_name}/guid', get_guid),
     app.router.add_get('/triggers/{trigger_name}', get_all_triggers),
     app.router.add_get('/triggers/{trigger_name}/objects/{thing_name}', get_sequence),
