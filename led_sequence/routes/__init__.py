@@ -16,7 +16,7 @@ storage_backend = create_storage_backend()
 
 async def get_guid(request: aiohttp.RequestInfo):
     trigger_name = request.match_info.get('trigger_name')
-    trigger_seq_config = await storage_backend.read(trigger_name)
+    trigger_seq_config = await storage_backend.read_sequence(trigger_name)
     if not trigger_seq_config:
         return aiohttp.web.Response(status=404)
     current_guid = str(trigger_seq_config['guid'])
@@ -24,7 +24,7 @@ async def get_guid(request: aiohttp.RequestInfo):
 
 async def get_all_triggers(request: aiohttp.RequestInfo):
     trigger_name = request.match_info.get('trigger_name')
-    trigger_seq_config = await storage_backend.read(trigger_name)
+    trigger_seq_config = await storage_backend.read_sequence(trigger_name)
     if not trigger_seq_config:
         return aiohttp.web.Response(status=404)
     headers = {
@@ -36,7 +36,7 @@ async def get_sequence(request: aiohttp.RequestInfo):
     trigger_name = request.match_info.get('trigger_name')
     thing_name = request.match_info.get('thing_name')
     guid = request.match_info.get('guid')
-    trigger_seq_config = await storage_backend.read(trigger_name)
+    trigger_seq_config = await storage_backend.read_sequence(trigger_name)
     if not trigger_seq_config:
         return aiohttp.web.Response(status=404)
 
@@ -69,7 +69,7 @@ async def set_sequence(request):
     trigger_name = request.match_info.get('trigger_name')
     thing_name = request.match_info.get('thing_name')
 
-    [new_config, curr_conf] = await asyncio.gather(request.json(), storage_backend.read(trigger_name))
+    [new_config, curr_conf] = await asyncio.gather(request.json(), storage_backend.read_sequence(trigger_name))
     if not curr_conf:
         curr_conf = {
             "things": {},
@@ -90,7 +90,7 @@ async def set_sequence(request):
     del curr_conf['guid']
     guid = hash(json.dumps(curr_conf)) & 0xffffffff
     curr_conf['guid'] = guid
-    await storage_backend.upsert(trigger_name, curr_conf)
+    await storage_backend.upsert_sequence(trigger_name, curr_conf)
     logging.info("saved new sequence for trigger '%s' on thing '%s' with guid '%d'", trigger_name, thing_name, guid)
 
     headers = {

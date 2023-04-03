@@ -4,12 +4,12 @@ import abc
 class StorageInterface(metaclass=abc.ABCMeta):
     
     @abc.abstractmethod
-    async def upsert(self, trigger_name: str, config):
+    async def upsert_sequence(self, trigger_name: str, config):
         """ Create or update new sequence configuration for a specific trigger
         """
 
     @abc.abstractmethod
-    async def read(self, trigger_name: str):
+    async def read_sequence(self, trigger_name: str):
         """ Read trigger configuration
         """
 
