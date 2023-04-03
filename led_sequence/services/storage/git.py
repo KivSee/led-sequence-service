@@ -20,14 +20,28 @@ class GitStorage(StorageInterface):
         except FileExistsError:
             pass
 
-    async def upsert(self, trigger_name: str, config):
-        file_name = self.trigger_name_to_file_name(trigger_name)
+    async def upsert_config(self, trigger_name: str, config):
+        file_name = self.trigger_name_to_config_file_name(trigger_name)
         async with aiof.open(file_name, "w") as out:
             await out.write(json.dumps(config))
             await out.flush()
 
-    async def read(self, trigger_name: str):
-        file_name = self.trigger_name_to_file_name(trigger_name)
+    async def read_config(self, trigger_name: str):
+        file_name = self.trigger_name_to_config_file_name(trigger_name)
+        try:
+            async with aiof.open(file_name, "r") as out:
+                return json.loads(await out.read())
+        except FileNotFoundError:
+            return None
+
+    async def upsert_sequence(self, trigger_name: str, config):
+        file_name = self.trigger_name_to_sequence_file_name(trigger_name)
+        async with aiof.open(file_name, "w") as out:
+            await out.write(json.dumps(config))
+            await out.flush()
+
+    async def read_sequence(self, trigger_name: str):
+        file_name = self.trigger_name_to_sequence_file_name(trigger_name)
         try:
             async with aiof.open(file_name, "r") as out:
                 return json.loads(await out.read())
@@ -37,5 +51,8 @@ class GitStorage(StorageInterface):
     async def get_all_triggers(self) -> List[str]:
         return []
 
-    def trigger_name_to_file_name(self, trigger_name: str) -> str:
+    def trigger_name_to_sequence_file_name(self, trigger_name: str) -> str:
         return os.path.join(self.sequences_dir, trigger_name + '.json')
+    
+    def trigger_name_to_config_file_name(self, trigger_name: str) -> str:
+        return os.path.join(self.config_dir, trigger_name + '.json')
