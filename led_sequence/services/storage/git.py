@@ -7,7 +7,18 @@ import aiofiles as aiof
 class GitStorage(StorageInterface):
 
     def __init__(self, repo: str):
-        self.repo = repo
+        self.sequences_dir = os.path.join(repo, 'sequences')
+        self.config_dir = os.path.join(repo, 'config')
+
+        try:
+            os.mkdir(self.sequences_dir)
+        except FileExistsError:
+            pass
+
+        try:
+            os.mkdir(self.config_dir)
+        except FileExistsError:
+            pass
 
     async def upsert(self, trigger_name: str, config):
         file_name = self.trigger_name_to_file_name(trigger_name)
@@ -27,4 +38,4 @@ class GitStorage(StorageInterface):
         return []
 
     def trigger_name_to_file_name(self, trigger_name: str) -> str:
-        return os.path.join(self.repo, trigger_name + '.json')
+        return os.path.join(self.sequences_dir, trigger_name + '.json')
