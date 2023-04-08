@@ -24,7 +24,7 @@ def config_to_audacity_labels_episodes(config):
 def config_to_audacity_labels_beats(config):
 
     audacity_formatted_output = ''
-    section_start_episode = 0
+    section_start_beats = 0
     for bpmSection in config["bpmSections"]:
 
         num_episodes = bpmSection["numEpisodes"]
@@ -35,11 +35,11 @@ def config_to_audacity_labels_beats(config):
         num_beats = num_episodes * beats_per_episode
         beat_duration = 60 / bpm
 
-        section_beats = [{"index": i + section_start_episode,
+        section_beats = [{"index": i + section_start_beats,
                              "start_time": start_seconds + i * beat_duration} for i in range(num_beats)]
         audacity_labels = [ f'{beat["start_time"]}\t{beat["start_time"]}\tb {beat["index"]}\n' for beat in section_beats]
         
         audacity_formatted_output += ''.join(audacity_labels)
-        section_start_episode += num_episodes
+        section_start_beats += num_beats
 
     return audacity_formatted_output
