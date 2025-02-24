@@ -1,3 +1,4 @@
+import time
 import aiohttp
 from aiohttp import web
 import json
@@ -67,7 +68,10 @@ async def get_sequence(request: aiohttp.RequestInfo):
     trigger_name = request.match_info.get('trigger_name')
     thing_name = request.match_info.get('thing_name')
     guid = request.match_info.get('guid')
+    storage_start_time = time.perf_counter()
     trigger_seq_config = await storage_backend.read_sequence(trigger_name)
+    storage_end_time = time.perf_counter()
+    logging.debug("storage read took %.6f seconds", storage_end_time - storage_start_time)
     if not trigger_seq_config:
         return aiohttp.web.Response(status=404)
 
@@ -90,7 +94,11 @@ async def get_sequence(request: aiohttp.RequestInfo):
     accept_content_type = request.headers.get('accept')
     if accept_content_type == 'application/x-protobuf':
         message = ParseDict(thing_config, AnimationProto())
-        return aiohttp.web.Response(body = message.SerializeToString(), headers=headers)
+        proto_start_time = time.perf_counter()
+        serialized_message = message.SerializeToString()
+        proto_end_time = time.perf_counter()
+        logging.debug("protobuf serialization took %.6f seconds", proto_end_time - proto_start_time)
+        return aiohttp.web.Response(body = serialized_message, headers=headers)
     if accept_content_type == 'application/json' or accept_content_type == '*/*':
         return aiohttp.web.json_response(thing_config, headers=headers)
     return aiohttp.web.Response(status=400)
