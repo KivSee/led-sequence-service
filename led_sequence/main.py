@@ -16,11 +16,14 @@ async def timing_middleware(app, handler):
             logging.info("Request %s %s took %.6f seconds", request.method, request.path, duration)
     return middleware_handler
 
-app = aiohttp.web.Application(middlewares=[timing_middleware])
+app = aiohttp.web.Application(
+    middlewares=[timing_middleware],
+    client_max_size=16 * 1024 * 1024,  # 16MB
+)
 setup_routes(app)
 
 if __name__ == '__main__':
-    server_port = os.environ.get('SERVER_PORT', 8082)
+    server_port = int(os.environ.get('SERVER_PORT', 8082))
     LOGLEVEL = os.environ.get('LOGLEVEL', 'INFO').upper()
     logging.basicConfig(level=LOGLEVEL)
     aiohttp.web.run_app(app, port=server_port)
