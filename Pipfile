@@ -9,6 +9,7 @@ verify_ssl = true
 aiohttp = "*"
 aiofiles = "*"
 protobuf = "*"
+numpy = "*"
 
 [requires]
 python_version = "3.11"

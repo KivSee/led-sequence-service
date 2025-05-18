@@ -1,10 +1,11 @@
 import time
 import aiohttp
-from aiohttp import web
 import json
 import logging
 import os
 import asyncio
+import kivsee_render
+from services.object_service import ObjectService
 from services.audacity import config_to_audacity_labels_beats
 from services.audacity import config_to_audacity_labels_episodes
 from services.storage import create_storage_backend
@@ -16,6 +17,17 @@ from proto.effects_pb2 import AnimationProto
 from google.protobuf.json_format import ParseDict
 
 storage_backend = create_storage_backend()
+
+# Get object service configuration from environment variables
+object_service_host = os.environ.get('LED_OBJECT_SERVICE_IP')
+if not object_service_host:
+    raise Exception('LED_OBJECT_SERVICE_IP environment variable must be set')
+object_service_port = int(os.environ.get('LED_OBJECT_SERVICE_PORT', '8081'))
+object_service = ObjectService(host=object_service_host, port=object_service_port)
+
+# Get the directory where this file is located
+CURRENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RING1_PROTO_PATH = os.path.join(CURRENT_DIR, 'ring1_proto')
 
 async def put_trigger_config(request: aiohttp.RequestInfo):
     trigger_name = request.match_info.get('trigger_name')
@@ -137,6 +149,69 @@ async def set_sequence(request):
     }
     return aiohttp.web.Response(status=200, headers=headers)
 
+async def get_trigger_stats(request: aiohttp.RequestInfo):
+    trigger_name = request.match_info.get('trigger_name')
+    # Get start_time and end_time from query parameters, default to 0 and 1000 if not provided
+    try:
+        start_time = int(request.query.get('start_time', '0'))
+        end_time = int(request.query.get('end_time', '1000'))
+    except ValueError:
+        return aiohttp.web.Response(status=400, text="start_time and end_time must be valid numbers")
+
+    if start_time >= end_time:
+        return aiohttp.web.Response(status=400, text="start_time must be less than end_time")
+
+    trigger_seq_config = await storage_backend.read_sequence(trigger_name)
+    if not trigger_seq_config:
+        return aiohttp.web.Response(status=404)
+
+    # First create all controllers
+    NUM_LEDS = 144
+    controllers = []
+    for thing_name, thing_config in trigger_seq_config['things'].items():
+
+        try:
+            ring_proto_data = await object_service.get_thing_proto_manifest(thing_name)
+        except Exception as e:
+            return aiohttp.web.Response(status=500, text=f"Error fetching proto data: {str(e)}")
+
+        message = ParseDict(thing_config, AnimationProto())
+        serialized_message = message.SerializeToString()
+        controller = kivsee_render.LedController(NUM_LEDS)
+        controller.init_from_proto_buffers(serialized_message, ring_proto_data)
+        controllers.append(controller)
+
+    total_brightness = 0
+    total_pixels = 0
+    frame_count = 0
+    
+    # Single loop over time for all controllers
+    current_time = start_time
+    while current_time <= end_time:
+        frame_count += 1
+        # Process each controller for this time step
+        for controller in controllers:
+            buf = controller.render(current_time)
+            # Sum brightness for all LEDs in this frame
+            for hsv_tuple in buf:
+                total_brightness += hsv_tuple[2]  # V value is at index 2
+                total_pixels += 1
+                
+        current_time += 20  # 20ms increment
+    
+    avg_brightness = total_brightness / total_pixels if total_pixels > 0 else 0
+    
+    stats = {
+        "guid": str(trigger_seq_config['guid']),
+        "num_things": len(trigger_seq_config['things']),
+        "average_brightness": float(avg_brightness),
+        "start_time": start_time,
+        "end_time": end_time,
+        "frame_count": frame_count,
+        "total_pixels_processed": total_pixels
+    }
+    return aiohttp.web.json_response(stats)
+
 def setup_routes(app):
     app.router.add_put('/triggers/{trigger_name}/config', put_trigger_config),
     app.router.add_get('/triggers/{trigger_name}/config', get_trigger_config),
@@ -148,3 +223,5 @@ def setup_routes(app):
     app.router.add_get('/triggers/{trigger_name}/objects/{thing_name}/guid/{guid}', get_sequence),
     app.router.add_put('/triggers/{trigger_name}/objects/{thing_name}', set_sequence),
     app.router.add_put('/triggers/{trigger_name}', set_sequence),
+    app.router.add_get('/triggers/{trigger_name}/stats', get_trigger_stats),
+
