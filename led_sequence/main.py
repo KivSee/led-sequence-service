@@ -5,6 +5,29 @@ import os
 import logging
 from routes import setup_routes
 
+async def cors_middleware(app, handler):
+    async def middleware_handler(request):
+        # Handle preflight requests
+        if request.method == 'OPTIONS':
+            return web.Response(
+                headers={
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': '*',
+                    'Access-Control-Allow-Headers': '*',
+                    'Access-Control-Max-Age': '3600',
+                }
+            )
+        
+        response = await handler(request)
+        
+        # Add CORS headers to all responses
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = '*'
+        response.headers['Access-Control-Allow-Headers'] = '*'
+        
+        return response
+    return middleware_handler
+
 async def timing_middleware(app, handler):
     async def middleware_handler(request):
         start_time = time.monotonic()
@@ -17,7 +40,7 @@ async def timing_middleware(app, handler):
     return middleware_handler
 
 app = aiohttp.web.Application(
-    middlewares=[timing_middleware],
+    middlewares=[cors_middleware, timing_middleware],
     client_max_size=16 * 1024 * 1024,  # 16MB
 )
 setup_routes(app)
