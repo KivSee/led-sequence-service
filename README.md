@@ -144,3 +144,17 @@ To use git storage, set the following env variables:
 STORAGE_TYPE=git
 GIT_STORAGE_REPO=/path/to/git/directory
 ```
+
+### Ring placement
+
+Maps installation positions to physical rings, so a ring plays the part of the position it hangs at regardless of the name in its `thing_info`. Open the page at `/placement/ui` (e.g. `http://<pi>:8082/placement/ui`).
+
+- GET `/placement` - the current placement (`{"ring1": "ring7", ...}`, position -> physical ring), the rings known to the object service, warnings, and the last trigger started.
+- PUT `/placement` - replace the placement. Body: `{"placement": {"ring1": "ring7", "ring13": "ring2"}}`. Rings not listed play under their own name; pendants and other things are never remapped. A physical ring may appear only once. Rings without a segment map in the object service get a copy of `ring1`'s.
+- POST `/placement/apply` - re-send the last trigger (or `{"trigger": "<name>"}`) through the trigger service so the rings pick up the placement now.
+
+A ring that asks for `/triggers/<t>/objects/ring7` gets the part of the position `ring7` is placed at. The guid served for every trigger is combined with a hash of the placement, so after a change the rings re-fetch on the next trigger; an empty placement leaves guids as stored.
+
+The placement is stored in `<GIT_STORAGE_REPO>/placement/rings.json`; each save keeps the previous one as `rings.prev.json`.
+
+Environment variables: `LED_OBJECT_SERVICE_URL` (default `http://ledobjectservice:80`) and `TRIGGER_SERVICE_URL` (default `http://ledtriggerservice:80`), the docker-compose service names.
