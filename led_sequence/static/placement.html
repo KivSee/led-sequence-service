@@ -64,6 +64,9 @@
       <div class="actions">
         <button id="add-extra">Add position</button>
       </div>
+      <h2>Pendants</h2>
+      <p class="hint">Choose which position each pendant imitates: it plays exactly what the ring at that position plays. "own" plays the pendant's own part, if the song has one.</p>
+      <div class="rows" id="pendant-rows"></div>
     </div>
   </div>
 
@@ -79,7 +82,7 @@
 const MAIN_POSITIONS = 12;
 const ORDER = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];  // clockwise from the top
 const ROTATION_DEG = 15;                                 // ring 12 hangs just right of the top
-let state = { placement: {}, physicalRings: [], extra: [], lastTrigger: null };
+let state = { placement: { rings: {}, pendants: {} }, physicalRings: [], physicalPendants: [], extra: [], lastTrigger: null };
 
 const num = name => parseInt(String(name).replace('ring', ''), 10);
 const el = (tag, props = {}, children = []) => {
@@ -96,7 +99,7 @@ function clearMessages() { document.getElementById('messages').innerHTML = ''; }
 
 function physicalOptions(position) {
   const names = new Set(state.physicalRings);
-  Object.values(state.placement).forEach(n => names.add(n));
+  Object.values(state.placement.rings).forEach(n => names.add(n));
   for (let i = 1; i <= MAIN_POSITIONS; i++) names.add(`ring${i}`);
   return [...names].sort((a, b) => num(a) - num(b));
 }
@@ -108,6 +111,34 @@ function currentAssignment() {
     if (s.value && s.value !== s.dataset.position) out[s.dataset.position] = s.value;
   });
   return out;
+}
+
+function currentPendants() {
+  // pendant -> position it imitates, read from the selects
+  const out = {};
+  document.querySelectorAll('select[data-pendant]').forEach(s => { if (s.value) out[s.dataset.pendant] = s.value; });
+  return out;
+}
+
+function allPositions() {
+  const set = new Set();
+  for (let i = 1; i <= MAIN_POSITIONS; i++) set.add(`ring${i}`);
+  state.extra.forEach(p => set.add(p));
+  Object.keys(state.placement.rings).forEach(p => set.add(p));
+  Object.values(state.placement.pendants).forEach(p => set.add(p));
+  return [...set].sort((a, b) => num(a) - num(b));
+}
+
+function pendantRow(pendant) {
+  const select = el('select', { 'aria-label': `Position ${pendant} imitates` });
+  select.dataset.pendant = pendant;
+  select.append(el('option', { value: '', textContent: `own (${pendant})` }));
+  for (const p of allPositions()) select.append(el('option', { value: p, textContent: `imitate position ${num(p)}` }));
+  select.value = state.placement.pendants[pendant] || '';
+  select.addEventListener('change', refresh);
+  const row = el('div', { className: 'row' }, [el('label', { textContent: pendant }), select]);
+  row.dataset.pendant = pendant;
+  return row;
 }
 
 function duplicates(assign) {
@@ -125,7 +156,7 @@ function rowFor(position) {
     select.append(el('option', { value: name, textContent: name }));
   }
   select.append(el('option', { value: '__other', textContent: 'Other ring…' }));
-  select.value = state.placement[position] || '';
+  select.value = state.placement.rings[position] || '';
   select.addEventListener('change', () => {
     if (select.value === '__other') {
       const n = prompt('Physical ring number (as in its thing_info, e.g. 14):');
@@ -149,8 +180,13 @@ function render() {
   const extra = document.getElementById('extra-rows');
   extra.innerHTML = '';
   const extraPositions = new Set(state.extra);
-  Object.keys(state.placement).filter(p => num(p) > MAIN_POSITIONS).forEach(p => extraPositions.add(p));
+  Object.keys(state.placement.rings).filter(p => num(p) > MAIN_POSITIONS).forEach(p => extraPositions.add(p));
   [...extraPositions].sort((a, b) => num(a) - num(b)).forEach(p => extra.append(rowFor(p)));
+  const pendants = document.getElementById('pendant-rows');
+  pendants.innerHTML = '';
+  const pendantNames = new Set(state.physicalPendants);
+  Object.keys(state.placement.pendants).forEach(p => pendantNames.add(p));
+  [...pendantNames].sort((a, b) => num(a) - num(b)).forEach(p => pendants.append(pendantRow(p)));
   document.getElementById('apply').disabled = !state.lastTrigger;
   document.getElementById('apply').textContent = state.lastTrigger ? `Apply now (re-send '${state.lastTrigger}')` : 'Apply now';
   refresh();
@@ -159,18 +195,22 @@ function render() {
 function refresh() {
   const assign = currentAssignment();
   const dups = duplicates(assign);
+  const pendants = currentPendants();
   document.querySelectorAll('.row').forEach(row => {
+    if (row.dataset.pendant) { row.classList.toggle('moved', !!pendants[row.dataset.pendant]); return; }
     const physical = assign[row.dataset.position];
     row.classList.toggle('moved', !!physical);
     row.classList.toggle('dup', !!physical && dups.has(physical));
   });
-  drawDiagram(assign);
+  drawDiagram(assign, pendants);
   document.getElementById('save').disabled = dups.size > 0;
 }
 
-function drawDiagram(assign) {
+function drawDiagram(assign, pendants) {
   const svg = document.getElementById('diagram');
   const c = 130, R = 98, r = 21;
+  const byPosition = {};
+  Object.entries(pendants).forEach(([pendant, p]) => (byPosition[p] = byPosition[p] || []).push(num(pendant)));
   let html = '';
   for (let i = 1; i <= MAIN_POSITIONS; i++) {
     const position = `ring${i}`;
@@ -180,6 +220,12 @@ function drawDiagram(assign) {
     html += `<circle class="ring${physical ? ' moved' : ''}" cx="${x}" cy="${y}" r="${r}"></circle>`;
     html += `<text x="${x}" y="${y - 4}">${physical ? num(physical) : i}</text>`;
     html += `<text class="pos" x="${x}" y="${y + 10}">pos ${i}</text>`;
+    const ls = byPosition[position];
+    if (ls) {
+      // pendants imitating this position, just inside the circle of rings
+      const xi = c + (R - r - 14) * Math.cos(a), yi = c + (R - r - 14) * Math.sin(a);
+      html += `<text class="pos" x="${xi}" y="${yi}">L${ls.sort((m, n) => m - n).join(',')}</text>`;
+    }
   }
   html += `<text class="pos" x="${c}" y="${c}">top = ring 12</text>`;
   svg.innerHTML = html;
@@ -189,7 +235,8 @@ async function load() {
   clearMessages();
   const res = await fetch('../placement');
   const data = await res.json();
-  state = { ...state, placement: data.placement || {}, physicalRings: data.physicalRings || [], lastTrigger: data.lastTrigger, extra: [] };
+  state = { ...state, placement: { rings: {}, pendants: {}, ...(data.placement || {}) }, physicalRings: data.physicalRings || [],
+            physicalPendants: data.physicalPendants || [], lastTrigger: data.lastTrigger, extra: [] };
   if (data.objectServiceError) message('warn', data.objectServiceError);
   (data.warnings || []).forEach(w => message('warn', w));
   render();
@@ -197,7 +244,7 @@ async function load() {
 
 async function save() {
   clearMessages();
-  const placement = currentAssignment();
+  const placement = { rings: currentAssignment(), pendants: currentPendants() };
   const res = await fetch('../placement', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placement }) });
   const data = await res.json();
   if (!res.ok) { (data.errors || ['save failed']).forEach(e => message('err', e)); return; }
@@ -221,12 +268,11 @@ document.getElementById('save').addEventListener('click', save);
 document.getElementById('apply').addEventListener('click', apply);
 document.getElementById('reset').addEventListener('click', load);
 document.getElementById('add-extra').addEventListener('click', () => {
-  const used = new Set([...state.extra, ...Object.keys(state.placement)].map(num));
+  const used = new Set([...state.extra, ...Object.keys(state.placement.rings)].map(num));
   let n = MAIN_POSITIONS + 1;
   while (used.has(n)) n++;
   state.extra.push(`ring${n}`);
-  const keep = currentAssignment();
-  state.placement = keep;
+  state.placement = { rings: currentAssignment(), pendants: currentPendants() };  // keep unsaved choices
   render();
 });
 load().catch(err => message('err', `Could not load the placement: ${err}`));

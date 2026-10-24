@@ -26,6 +26,9 @@ PLACEMENT_UI_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath
 # last name asked for is what is playing now; re-sending it applies a new placement.
 last_trigger = {'name': None}
 
+async def current_placement():
+    return ring_placement.normalize(await storage_backend.read_placement())
+
 async def put_trigger_config(request: aiohttp.RequestInfo):
     trigger_name = request.match_info.get('trigger_name')
     config = await request.json()
@@ -61,7 +64,7 @@ async def get_guid(request: aiohttp.RequestInfo):
     if not trigger_seq_config:
         return aiohttp.web.Response(status=404)
     last_trigger['name'] = trigger_name
-    placement = await storage_backend.read_placement()
+    placement = await current_placement()
     current_guid = str(ring_placement.combine_guid(trigger_seq_config['guid'], placement))
     return aiohttp.web.json_response({"guid": current_guid})
 
@@ -70,7 +73,7 @@ async def get_all_triggers(request: aiohttp.RequestInfo):
     trigger_seq_config = await storage_backend.read_sequence(trigger_name)
     if not trigger_seq_config:
         return aiohttp.web.Response(status=404)
-    placement = await storage_backend.read_placement()
+    placement = await current_placement()
     headers = {
         'etag': str(ring_placement.combine_guid(trigger_seq_config['guid'], placement))
     }
@@ -87,7 +90,7 @@ async def get_sequence(request: aiohttp.RequestInfo):
     if not trigger_seq_config:
         return aiohttp.web.Response(status=404)
 
-    placement = await storage_backend.read_placement()
+    placement = await current_placement()
     current_guid = str(ring_placement.combine_guid(trigger_seq_config['guid'], placement))
     if guid and guid != current_guid:
         return aiohttp.web.Response(status=404)
@@ -97,7 +100,7 @@ async def get_sequence(request: aiohttp.RequestInfo):
         return aiohttp.web.Response(status=304)
 
     # a placed ring plays the part of the position it hangs at
-    position = ring_placement.position_for(placement, thing_name)
+    position = ring_placement.part_for(placement, thing_name)
     if position != thing_name:
         logging.debug("thing '%s' is placed at '%s'", thing_name, position)
     thing_config = trigger_seq_config['things'].get(position)
@@ -154,14 +157,18 @@ async def set_sequence(request):
     }
     return aiohttp.web.Response(status=200, headers=headers)
 
-async def list_physical_rings():
-    """ring<N> things the object service knows (they have a segment map), sorted by number."""
+async def list_physical_things():
+    """(rings, pendants) the object service knows (they have a segment map), sorted by number."""
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
         async with session.get(f"{LED_OBJECT_SERVICE_URL}/thing", headers={'accept': 'application/json'}) as res:
             res.raise_for_status()
             things = await res.json()
-    names = [name for name in things if ring_placement.RING_NAME.match(name)]
-    return sorted(names, key=ring_placement.ring_number)
+    rings = sorted((n for n in things if ring_placement.RING_NAME.match(n)), key=ring_placement.ring_number)
+    pendants = sorted((n for n in things if ring_placement.PENDANT_NAME.match(n)), key=ring_placement.ring_number)
+    return rings, pendants
+
+async def list_physical_rings():
+    return (await list_physical_things())[0]
 
 async def ensure_segment_maps(physical_rings):
     """Give rings without a segment map a copy of ring1's (all rings share the same map)."""
@@ -181,16 +188,17 @@ async def ensure_segment_maps(physical_rings):
     return missing
 
 async def get_placement(request):
-    placement = await storage_backend.read_placement()
+    placement = await current_placement()
     try:
-        physical_rings = await list_physical_rings()
+        physical_rings, physical_pendants = await list_physical_things()
         object_service_error = None
     except Exception as err:
-        physical_rings = []
+        physical_rings, physical_pendants = [], []
         object_service_error = f"could not list rings from the object service: {err}"
     return web.json_response({
         "placement": placement,
         "physicalRings": physical_rings,
+        "physicalPendants": physical_pendants,
         "warnings": ring_placement.warnings(placement, physical_rings or None),
         "lastTrigger": last_trigger['name'],
         "objectServiceError": object_service_error,
@@ -208,7 +216,7 @@ async def put_placement(request):
     await storage_backend.upsert_placement(placement)
     logging.info("saved ring placement %s", placement)
     try:
-        created = await ensure_segment_maps(sorted(set(placement.values())))
+        created = await ensure_segment_maps(sorted(set(placement['rings'].values())))
         segment_error = None
     except Exception as err:
         created = []
