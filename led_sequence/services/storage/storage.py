@@ -27,3 +27,13 @@ class StorageInterface(metaclass=abc.ABCMeta):
     async def get_all_triggers(self) -> List[str]:
         """ return all configured triggers
         """
+
+    @abc.abstractmethod
+    async def read_placement(self):
+        """ Read the ring placement (position -> physical ring), {} when none is set
+        """
+
+    @abc.abstractmethod
+    async def upsert_placement(self, placement):
+        """ Replace the ring placement, keeping the previous one as a backup
+        """

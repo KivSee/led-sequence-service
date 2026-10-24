@@ -9,16 +9,15 @@ class GitStorage(StorageInterface):
     def __init__(self, repo: str):
         self.sequences_dir = os.path.join(repo, 'sequences')
         self.config_dir = os.path.join(repo, 'config')
+        self.placement_dir = os.path.join(repo, 'placement')
+        self.placement_file = os.path.join(self.placement_dir, 'rings.json')
+        self.placement_prev_file = os.path.join(self.placement_dir, 'rings.prev.json')
 
-        try:
-            os.mkdir(self.sequences_dir)
-        except FileExistsError:
-            pass
-
-        try:
-            os.mkdir(self.config_dir)
-        except FileExistsError:
-            pass
+        for directory in (self.sequences_dir, self.config_dir, self.placement_dir):
+            try:
+                os.mkdir(directory)
+            except FileExistsError:
+                pass
 
     async def upsert_config(self, trigger_name: str, config):
         file_name = self.trigger_name_to_config_file_name(trigger_name)
@@ -50,6 +49,24 @@ class GitStorage(StorageInterface):
 
     async def get_all_triggers(self) -> List[str]:
         return []
+
+    async def read_placement(self):
+        try:
+            async with aiof.open(self.placement_file, "r") as f:
+                return json.loads(await f.read())
+        except FileNotFoundError:
+            return {}
+
+    async def upsert_placement(self, placement):
+        # keep the previous placement next to it so a wrong save can be undone,
+        # and write via a temp file so a reader never sees a half-written file
+        if os.path.exists(self.placement_file):
+            os.replace(self.placement_file, self.placement_prev_file)
+        tmp_file = self.placement_file + '.tmp'
+        async with aiof.open(tmp_file, "w") as f:
+            await f.write(json.dumps(placement, indent=2, sort_keys=True))
+            await f.flush()
+        os.replace(tmp_file, self.placement_file)
 
     def trigger_name_to_sequence_file_name(self, trigger_name: str) -> str:
         return os.path.join(self.sequences_dir, trigger_name + '.json')

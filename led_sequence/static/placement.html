@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ring Placement</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66;
+    --line: #dcdcd6; --accent: #5b4bd6; --accent-text: #ffffff;
+    --warn-bg: #fff4dc; --warn-text: #7a5200; --err-bg: #fde7e7; --err-text: #9b1c1c;
+    --ok-bg: #e5f6ea; --ok-text: #1d6b35; --moved: #ece9ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141414; --panel: #1e1e1e; --text: #ececea; --muted: #9a9a94;
+      --line: #333331; --accent: #8b7dff; --accent-text: #141414;
+      --warn-bg: #3a2e12; --warn-text: #f3cf7a; --err-bg: #3d1c1c; --err-text: #f2a3a3;
+      --ok-bg: #173323; --ok-text: #8fdca7; --moved: #2b2747;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 22px; margin: 4px 0 2px; }
+  h2 { font-size: 16px; margin: 20px 0 8px; }
+  p.hint { color: var(--muted); margin: 0 0 12px; }
+  .layout { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 640px) { .layout { grid-template-columns: 260px 1fr; align-items: start; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  svg { width: 100%; height: auto; display: block; }
+  svg text { fill: var(--text); font: 600 13px system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; }
+  svg .pos { fill: var(--muted); font-weight: 400; font-size: 10px; }
+  svg circle.ring { fill: var(--panel); stroke: var(--line); stroke-width: 2; }
+  svg circle.ring.moved { fill: var(--moved); stroke: var(--accent); }
+  .rows { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); }
+  .row.moved { background: var(--moved); border-color: var(--accent); }
+  .row.dup { border-color: var(--err-text); }
+  .row label { flex: 0 0 auto; min-width: 74px; font-weight: 600; }
+  select { flex: 1 1 auto; min-width: 0; padding: 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  button { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .msg { padding: 8px 10px; border-radius: 8px; margin: 8px 0 0; }
+  .msg.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .msg.err { background: var(--err-bg); color: var(--err-text); }
+  .msg.ok { background: var(--ok-bg); color: var(--ok-text); }
+  @media (max-width: 420px) { .rows { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ring Placement</h1>
+  <p class="hint">Choose which physical ring (the name in its thing_info) hangs at each position. A ring plays the part of the position it hangs at; positions left on "own" play the ring with the same number.</p>
+
+  <div class="layout">
+    <div class="card"><svg id="diagram" viewBox="0 0 260 260" aria-label="Installation layout"></svg></div>
+    <div>
+      <div class="rows" id="main-rows"></div>
+      <h2>Extra positions</h2>
+      <div class="rows" id="extra-rows"></div>
+      <div class="actions">
+        <button id="add-extra">Add position</button>
+      </div>
+      <h2>Pendants</h2>
+      <p class="hint">Choose which position each pendant imitates: it plays exactly what the ring at that position plays. "own" plays the pendant's own part, if the song has one.</p>
+      <div class="rows" id="pendant-rows"></div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="save">Save placement</button>
+    <button id="apply" disabled>Apply now</button>
+    <button id="reset">Reload</button>
+  </div>
+  <div id="messages"></div>
+</main>
+
+<script>
+const MAIN_POSITIONS = 12;
+const ORDER = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];  // clockwise from the top
+const ROTATION_DEG = 15;                                 // ring 12 hangs just right of the top
+let state = { placement: { rings: {}, pendants: {} }, physicalRings: [], physicalPendants: [], extra: [], lastTrigger: null };
+
+const num = name => parseInt(String(name).replace('ring', ''), 10);
+const el = (tag, props = {}, children = []) => {
+  const e = document.createElement(tag);
+  Object.assign(e, props);
+  for (const c of children) e.append(c);
+  return e;
+};
+
+function message(kind, text) {
+  document.getElementById('messages').append(el('div', { className: `msg ${kind}`, textContent: text }));
+}
+function clearMessages() { document.getElementById('messages').innerHTML = ''; }
+
+function physicalOptions(position) {
+  const names = new Set(state.physicalRings);
+  Object.values(state.placement.rings).forEach(n => names.add(n));
+  for (let i = 1; i <= MAIN_POSITIONS; i++) names.add(`ring${i}`);
+  return [...names].sort((a, b) => num(a) - num(b));
+}
+
+function currentAssignment() {
+  // position -> physical, read from the selects
+  const out = {};
+  document.querySelectorAll('select[data-position]').forEach(s => {
+    if (s.value && s.value !== s.dataset.position) out[s.dataset.position] = s.value;
+  });
+  return out;
+}
+
+function currentPendants() {
+  // pendant -> position it imitates, read from the selects
+  const out = {};
+  document.querySelectorAll('select[data-pendant]').forEach(s => { if (s.value) out[s.dataset.pendant] = s.value; });
+  return out;
+}
+
+function allPositions() {
+  const set = new Set();
+  for (let i = 1; i <= MAIN_POSITIONS; i++) set.add(`ring${i}`);
+  state.extra.forEach(p => set.add(p));
+  Object.keys(state.placement.rings).forEach(p => set.add(p));
+  Object.values(state.placement.pendants).forEach(p => set.add(p));
+  return [...set].sort((a, b) => num(a) - num(b));
+}
+
+function pendantRow(pendant) {
+  const select = el('select', { 'aria-label': `Position ${pendant} imitates` });
+  select.dataset.pendant = pendant;
+  select.append(el('option', { value: '', textContent: `own (${pendant})` }));
+  for (const p of allPositions()) select.append(el('option', { value: p, textContent: `imitate position ${num(p)}` }));
+  select.value = state.placement.pendants[pendant] || '';
+  select.addEventListener('change', refresh);
+  const row = el('div', { className: 'row' }, [el('label', { textContent: pendant }), select]);
+  row.dataset.pendant = pendant;
+  return row;
+}
+
+function duplicates(assign) {
+  const count = {};
+  Object.values(assign).forEach(p => count[p] = (count[p] || 0) + 1);
+  return new Set(Object.keys(count).filter(p => count[p] > 1));
+}
+
+function rowFor(position) {
+  const select = el('select', { 'aria-label': `Physical ring at ${position}` });
+  select.dataset.position = position;
+  select.append(el('option', { value: '', textContent: `own (${position})` }));
+  for (const name of physicalOptions(position)) {
+    if (name === position) continue;
+    select.append(el('option', { value: name, textContent: name }));
+  }
+  select.append(el('option', { value: '__other', textContent: 'Other ring…' }));
+  select.value = state.placement.rings[position] || '';
+  select.addEventListener('change', () => {
+    if (select.value === '__other') {
+      const n = prompt('Physical ring number (as in its thing_info, e.g. 14):');
+      const name = n && /^\d+$/.test(n.trim()) ? `ring${n.trim()}` : '';
+      if (name && ![...select.options].some(o => o.value === name)) {
+        select.insertBefore(el('option', { value: name, textContent: name }), select.lastChild);
+      }
+      select.value = name === position ? '' : name;
+    }
+    refresh();
+  });
+  const row = el('div', { className: 'row' }, [el('label', { textContent: `Position ${num(position)}` }), select]);
+  row.dataset.position = position;
+  return row;
+}
+
+function render() {
+  const main = document.getElementById('main-rows');
+  main.innerHTML = '';
+  ORDER.forEach(i => main.append(rowFor(`ring${i}`)));
+  const extra = document.getElementById('extra-rows');
+  extra.innerHTML = '';
+  const extraPositions = new Set(state.extra);
+  Object.keys(state.placement.rings).filter(p => num(p) > MAIN_POSITIONS).forEach(p => extraPositions.add(p));
+  [...extraPositions].sort((a, b) => num(a) - num(b)).forEach(p => extra.append(rowFor(p)));
+  const pendants = document.getElementById('pendant-rows');
+  pendants.innerHTML = '';
+  const pendantNames = new Set(state.physicalPendants);
+  Object.keys(state.placement.pendants).forEach(p => pendantNames.add(p));
+  [...pendantNames].sort((a, b) => num(a) - num(b)).forEach(p => pendants.append(pendantRow(p)));
+  document.getElementById('apply').disabled = !state.lastTrigger;
+  document.getElementById('apply').textContent = state.lastTrigger ? `Apply now (re-send '${state.lastTrigger}')` : 'Apply now';
+  refresh();
+}
+
+function refresh() {
+  const assign = currentAssignment();
+  const dups = duplicates(assign);
+  const pendants = currentPendants();
+  document.querySelectorAll('.row').forEach(row => {
+    if (row.dataset.pendant) { row.classList.toggle('moved', !!pendants[row.dataset.pendant]); return; }
+    const physical = assign[row.dataset.position];
+    row.classList.toggle('moved', !!physical);
+    row.classList.toggle('dup', !!physical && dups.has(physical));
+  });
+  drawDiagram(assign, pendants);
+  document.getElementById('save').disabled = dups.size > 0;
+}
+
+function drawDiagram(assign, pendants) {
+  const svg = document.getElementById('diagram');
+  const c = 130, R = 98, r = 21;
+  const byPosition = {};
+  Object.entries(pendants).forEach(([pendant, p]) => (byPosition[p] = byPosition[p] || []).push(num(pendant)));
+  let html = '';
+  for (let i = 1; i <= MAIN_POSITIONS; i++) {
+    const position = `ring${i}`;
+    const a = ((i % 12) * 30 + ROTATION_DEG - 90) * Math.PI / 180;
+    const x = c + R * Math.cos(a), y = c + R * Math.sin(a);
+    const physical = assign[position];
+    html += `<circle class="ring${physical ? ' moved' : ''}" cx="${x}" cy="${y}" r="${r}"></circle>`;
+    html += `<text x="${x}" y="${y - 4}">${physical ? num(physical) : i}</text>`;
+    html += `<text class="pos" x="${x}" y="${y + 10}">pos ${i}</text>`;
+    const ls = byPosition[position];
+    if (ls) {
+      // pendants imitating this position, just inside the circle of rings
+      const xi = c + (R - r - 14) * Math.cos(a), yi = c + (R - r - 14) * Math.sin(a);
+      html += `<text class="pos" x="${xi}" y="${yi}">L${ls.sort((m, n) => m - n).join(',')}</text>`;
+    }
+  }
+  html += `<text class="pos" x="${c}" y="${c}">top = ring 12</text>`;
+  svg.innerHTML = html;
+}
+
+async function load() {
+  clearMessages();
+  const res = await fetch('../placement');
+  const data = await res.json();
+  state = { ...state, placement: { rings: {}, pendants: {}, ...(data.placement || {}) }, physicalRings: data.physicalRings || [],
+            physicalPendants: data.physicalPendants || [], lastTrigger: data.lastTrigger, extra: [] };
+  if (data.objectServiceError) message('warn', data.objectServiceError);
+  (data.warnings || []).forEach(w => message('warn', w));
+  render();
+}
+
+async function save() {
+  clearMessages();
+  const placement = { rings: currentAssignment(), pendants: currentPendants() };
+  const res = await fetch('../placement', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placement }) });
+  const data = await res.json();
+  if (!res.ok) { (data.errors || ['save failed']).forEach(e => message('err', e)); return; }
+  state.placement = data.placement;
+  state.lastTrigger = data.lastTrigger;
+  message('ok', `Saved. Rings switch when the next trigger or song starts${data.lastTrigger ? `, or press Apply now` : ''}.`);
+  if (data.createdSegmentMaps && data.createdSegmentMaps.length) message('ok', `Created segment maps for ${data.createdSegmentMaps.join(', ')} (copied from ring1).`);
+  if (data.segmentMapError) message('warn', data.segmentMapError);
+  (data.warnings || []).forEach(w => message('warn', w));
+  render();
+}
+
+async function apply() {
+  const res = await fetch('../placement/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  const data = await res.json();
+  if (res.ok) message('ok', `Re-sent '${data.trigger}'. If it was a song, it now plays as a trigger without music.`);
+  else message('err', data.error || 'apply failed');
+}
+
+document.getElementById('save').addEventListener('click', save);
+document.getElementById('apply').addEventListener('click', apply);
+document.getElementById('reset').addEventListener('click', load);
+document.getElementById('add-extra').addEventListener('click', () => {
+  const used = new Set([...state.extra, ...Object.keys(state.placement.rings)].map(num));
+  let n = MAIN_POSITIONS + 1;
+  while (used.has(n)) n++;
+  state.extra.push(`ring${n}`);
+  state.placement = { rings: currentAssignment(), pendants: currentPendants() };  // keep unsaved choices
+  render();
+});
+load().catch(err => message('err', `Could not load the placement: ${err}`));
+</script>
+</body>
+</html>
