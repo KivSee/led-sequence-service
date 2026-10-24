@@ -1,6 +1,12 @@
 name: Publish to Docker Hub
 on:
+    push:
+        branches: [main]
     workflow_dispatch:
+# a newer push supersedes a publish still in progress
+concurrency:
+    group: docker-publish
+    cancel-in-progress: true
 jobs:
     publish-to-dockerhub:
         runs-on: ubuntu-latest
