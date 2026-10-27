@@ -1,12 +1,18 @@
+from collections import OrderedDict
 from typing import List
 from services.storage.storage import StorageInterface
 import os
 import json
 import aiofiles as aiof
 
+# parsed sequences kept in memory; a large song is tens of MB as Python objects, so keep only a few
+SEQUENCE_CACHE_SIZE = 4
+
 class GitStorage(StorageInterface):
 
     def __init__(self, repo: str):
+        # trigger name -> ((mtime_ns, size), parsed sequence)
+        self._sequence_cache = OrderedDict()
         self.sequences_dir = os.path.join(repo, 'sequences')
         self.config_dir = os.path.join(repo, 'config')
         self.placement_dir = os.path.join(repo, 'placement')
@@ -38,14 +44,43 @@ class GitStorage(StorageInterface):
         async with aiof.open(file_name, "w") as out:
             await out.write(json.dumps(config))
             await out.flush()
+        self._remember_sequence(trigger_name, self._file_key(file_name), config)
 
     async def read_sequence(self, trigger_name: str):
+        """The parsed sequence, re-read only when the file changed. The returned object is
+        shared with other readers: callers must not modify it (copy first)."""
         file_name = self.trigger_name_to_sequence_file_name(trigger_name)
+        key = self._file_key(file_name)
+        if key is None:
+            self._sequence_cache.pop(trigger_name, None)
+            return None
+        cached = self._sequence_cache.get(trigger_name)
+        if cached is not None and cached[0] == key:
+            self._sequence_cache.move_to_end(trigger_name)
+            return cached[1]
         try:
             async with aiof.open(file_name, "r") as out:
-                return json.loads(await out.read())
+                sequence = json.loads(await out.read())
         except FileNotFoundError:
             return None
+        self._remember_sequence(trigger_name, key, sequence)
+        return sequence
+
+    @staticmethod
+    def _file_key(file_name: str):
+        try:
+            st = os.stat(file_name)
+        except FileNotFoundError:
+            return None
+        return (st.st_mtime_ns, st.st_size)
+
+    def _remember_sequence(self, trigger_name: str, key, sequence):
+        if key is None:
+            return
+        self._sequence_cache[trigger_name] = (key, sequence)
+        self._sequence_cache.move_to_end(trigger_name)
+        while len(self._sequence_cache) > SEQUENCE_CACHE_SIZE:
+            self._sequence_cache.popitem(last=False)
 
     async def get_all_triggers(self) -> List[str]:
         return []
