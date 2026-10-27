@@ -15,6 +15,7 @@ import sys
 sys.path.append(os.path.join(sys.path[0],'proto'))
 from proto.effects_pb2 import AnimationProto
 from google.protobuf.json_format import ParseDict
+from services.proto_cache import proto_cache
 
 storage_backend = create_storage_backend()
 
@@ -113,11 +114,8 @@ async def get_sequence(request: aiohttp.RequestInfo):
     }
     accept_content_type = request.headers.get('accept')
     if accept_content_type == 'application/x-protobuf':
-        message = ParseDict(thing_config, AnimationProto())
-        proto_start_time = time.perf_counter()
-        serialized_message = message.SerializeToString()
-        proto_end_time = time.perf_counter()
-        logging.debug("protobuf serialization took %.6f seconds", proto_end_time - proto_start_time)
+        # cached per sequence version and position, so a placement change needs no new conversion
+        serialized_message = await proto_cache.get(trigger_name, trigger_seq_config['guid'], position, thing_config)
         return aiohttp.web.Response(body = serialized_message, headers=headers)
     if accept_content_type == 'application/json' or accept_content_type == '*/*':
         return aiohttp.web.json_response(thing_config, headers=headers)
@@ -134,15 +132,19 @@ async def set_sequence(request):
             "things": {},
             "guid": ""
         }
+    else:
+        # the stored sequence is cached and shared with readers: change a copy
+        curr_conf = {**curr_conf, 'things': dict(curr_conf['things'])}
 
-    try: 
+    try:
         if thing_name:
             curr_conf['things'][thing_name] = new_config
-            ParseDict(new_config, AnimationProto())
+            changed = {thing_name: new_config}
         else:
             curr_conf['things'] = new_config
-            for single_thing_config in new_config.values():
-                ParseDict(single_thing_config, AnimationProto())
+            changed = dict(new_config)
+        # converting validates the configs; the bytes are kept so the first play needs no conversion
+        converted = await proto_cache.convert_all(changed)
     except Exception as err:
         return aiohttp.web.Response(status=400, text = str(err))
 
@@ -150,6 +152,8 @@ async def set_sequence(request):
     guid = hash(json.dumps(curr_conf)) & 0xffffffff
     curr_conf['guid'] = guid
     await storage_backend.upsert_sequence(trigger_name, curr_conf)
+    unchanged = [p for p in curr_conf['things'] if p not in changed] if thing_name else []
+    proto_cache.store(trigger_name, guid, converted, unchanged)
     logging.info("saved new sequence for trigger '%s' on thing '%s' with guid '%d'", trigger_name, thing_name, guid)
 
     headers = {
@@ -252,7 +256,15 @@ async def apply_placement(request):
 async def placement_ui(request):
     return web.FileResponse(PLACEMENT_UI_FILE)
 
+async def start_proto_workers(app):
+    proto_cache.start()
+
+async def stop_proto_workers(app):
+    proto_cache.shutdown()
+
 def setup_routes(app):
+    app.on_startup.append(start_proto_workers)
+    app.on_cleanup.append(stop_proto_workers)
     app.router.add_get('/placement', get_placement),
     app.router.add_put('/placement', put_placement),
     app.router.add_post('/placement/apply', apply_placement),
